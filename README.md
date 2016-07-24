@@ -2,7 +2,7 @@
 
 thread-pool is a simple thread pool manager for Node.js. It allows you to create
 a waiting pool of independent OS processes, each running Node.js, to which
-you can assign tasks, using promises to handle the completion of those taks.
+you can assign tasks, using promises to handle the completion of those tasks.
 
 ## Usage
 
@@ -111,7 +111,7 @@ been completed.
 
 ## Re-Initializing a Pool
 
-If a pool has been shut down, you can bring it back to life by callling
+If a pool has been shut down, you can bring it back to life by calling
 `pool.up()`. Calling this function while a pool is still alive will not hurt
 anything. It will simply make sure that there are live threads generated to
 fill the size of your thread pool. So if no threads are alive, all of them

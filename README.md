@@ -126,3 +126,11 @@ the pool. As such, this should not cause problems as long as your thread tasks
 are already pre-processed and all the files they import are also pre-processed.
 However, if you were to import an unprocessed file that employed a non-native
 technique, your thread would likely throw an error and die.
+
+## Context Considerations
+
+If you pass in a function rather than a file for your thread task, keep in mind
+that the function has to be stringified, passed to a new thread, and then
+re-evaluated. As such, it will not have access to any context from within the
+main thread, including any reference to `this` within the main thread, closure
+variables, etc.

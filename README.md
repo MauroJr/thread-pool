@@ -99,6 +99,9 @@ in its place automatically. It won't be able to pick up where the old thread
 left off, but it will be able to grab any queued up tasks and start running
 with them.
 
+Don't forget that you have `Promise#catch` that you can use to catch any error
+that might result in your thread dying.
+
 ## Shutting Down a Pool
 
 If you are done with your pool, you don't have to leave threads alive with

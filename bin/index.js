@@ -13,10 +13,10 @@ var _createClass = function () { function defineProperties(target, props) { for 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      const pool = new Pool();
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      pool.assign({
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       task: function (payload, finish, err) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         finish('i got ' + payload);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       task: function (handler) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         finish('i got ' + handler.init);
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        },
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       payload: 'hello'
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       init: 'hello'
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      })
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      .then(data => {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        console.log('pool sent back', data);
@@ -24,6 +24,8 @@ var _createClass = function () { function defineProperties(target, props) { for 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       */
 
 var _processEvents = require('./helpers/process-events');
+
+var _processEvents2 = _interopRequireDefault(_processEvents);
 
 var _symbols = require('./helpers/symbols');
 
@@ -45,12 +47,16 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 function sendTaskToChild(child, taskObj) {
   var toSend = { type: 'task', data: taskObj, isFunction: false };
 
-  // If the task comes in as a string, it's a path to a file containing
-  // the task.
+  /*
+   * If the task comes in as a string, it's a path to a file containing
+   * the task.
+   */
   if (typeof taskObj.task === 'string') {
     child.send(toSend);
 
-    // If it's a function, stringify the function and send that.
+    /*
+     * If it's a function, stringify the function and send that.
+     */
   } else if (typeof taskObj.task === 'function') {
     toSend.data.task = taskObj.task.toString();
     toSend.isFunction = true;
@@ -59,8 +65,10 @@ function sendTaskToChild(child, taskObj) {
     throw new Error('Tasks may only be functions or paths to JavaScript files.');
   }
 
-  // If we want this process to die after a certain amount of time,
-  // set a timer to do that.
+  /*
+   * If we want this process to die after a certain amount of time,
+   * set a timer to do that.
+   */
   if (taskObj.timeout) {
     child[_symbols2.default.TIMER] = setTimeout(function () {
       return child.kill('SIGINT');
@@ -90,6 +98,7 @@ var Pool = exports.Pool = function () {
     _classCallCheck(this, Pool);
 
     this[_symbols2.default.MAX_SIZE] = size;
+    this[_symbols2.default.HANDLER] = null;
     this[_symbols2.default.WAITING] = [];
     this[_symbols2.default.TASK_QUEUE] = [];
     this[_symbols2.default.PIDS] = [];
@@ -110,7 +119,7 @@ var Pool = exports.Pool = function () {
     value: function up() {
       var amount = this[_symbols2.default.MAX_SIZE] - this[_symbols2.default.WAITING].length;
       for (var i = 0; i < amount; i += 1) {
-        (0, _processEvents.spawn)(this);
+        (0, _processEvents2.default)(this);
       }
       console.log('Thread Pool: All processes alive.');
     }
@@ -137,7 +146,7 @@ var Pool = exports.Pool = function () {
      * a promise so we can handle the return from the child process.
      *
      * @param  {Object} taskObj  Describes the task to be completed.
-     *                           Keys are `task` and `payload`.
+     *                           Keys are `task`, `init`, `timeout`.
      *
      * @return {Promise}
      */
@@ -149,24 +158,36 @@ var Pool = exports.Pool = function () {
 
       return new Promise(function (resolve, reject) {
 
-        // If there is a process waiting to receive a task...
+        /*
+         * If there is a process waiting to receive a task...
+         */
         if (_this[_symbols2.default.WAITING].length) {
 
-          // Remove the child process from the waiting pool.
+          /*
+           * Remove the child process from the waiting pool.
+           */
           var child = _this[_symbols2.default.WAITING].pop();
 
-          // Send the child process the task.
+          /*
+           * Send the child process the task.
+           */
           sendTaskToChild(child, taskObj);
 
-          // Attach a resolver and a rejecter to our child process.
+          /*
+           * Attach a resolver and a rejecter to our child process.
+           */
           child[_symbols2.default.RESOLVER] = resolve;
           child[_symbols2.default.REJECTER] = reject;
 
-          // If we are not able to assign the task...
+          /*
+           * If we are not able to assign the task...
+           */
         } else {
 
-          // Push the task to the task queue and wait for another child process
-          // to finish and pick it up.
+          /*
+           * Push the task to the task queue and wait for another child process
+           * to finish and pick it up.
+           */
           _this[_symbols2.default.TASK_QUEUE].push({
             task: taskObj,
             resolve: resolve,
@@ -176,6 +197,22 @@ var Pool = exports.Pool = function () {
           console.log('Thread Pool: New task waiting for idle thread. ' + _this[_symbols2.default.TASK_QUEUE].length + ' tasks waiting.');
         }
       });
+    }
+
+    /**
+     * Allow the user to handle incoming messages from child processes.
+     *
+     * @param  {Function} fn Accepts a `data` argument and a `reply` function
+     *                       which allows the user to
+     *                       send a reply back to the process.
+     *
+     * @return {undefined}
+     */
+
+  }, {
+    key: 'onMessage',
+    value: function onMessage(fn) {
+      this[_symbols2.default.HANDLER] = fn;
     }
   }]);
 

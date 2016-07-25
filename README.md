@@ -6,6 +6,8 @@ you can assign tasks, using promises to handle the completion of those tasks.
 
 ## Usage
 
+### Creating a Thread Pool
+
 Import the `Pool` class and create a new pool, optionally passing in a pool
 size. If you don't specify a size, the pool will default to giving you 5
 threads.
@@ -23,10 +25,10 @@ When you are ready to pass a task off to one of these threads, use
 
 ```javascript
 pool.assign({
-  task: (payload, finish, err) => {
-    setTimeout(() => finish('I processed ' + payload), 3000);
+  task: (handler) => {
+    setTimeout(() => handler.finish('I processed ' + handler.init), 3000);
   },
-  payload: 'foo',
+  init: 'foo',
   timeout: 10000
 })
 .then(data => console.log('Success!', data))
@@ -34,18 +36,21 @@ pool.assign({
 ```
 
 The `assign` method should be handed an object with three keys – `task`,
-`payload`, and `timeout`. The `task` key determines the actual task to be
-accomplished. The `payload` key determines the data that should be processed
+`init`, and `timeout`. The `task` key determines the actual task to be
+accomplished. The `init` key determines the data that should be processed
 within that task. The `timeout` key, which is optional, gives your task a
 certain amount of time to finish. If it doesn't finish in that time, it is
 automatically killed.
 
-In this example, we've passed an actual function in for the `task` key. Its
-three arguments denote the payload (as defined in the `payload` key), a
-`finish` function which is to be called when the thread has finished its task,
-and an `err` function which is to be called when you want to manually shut
-down the thread from the inside. The `finish` function takes a single data
-argument that will be passed back to the main thread.
+In this example, we've passed an actual function in for the `task` key. It
+takes a single argument denoting an instance of a `Handler` class that
+allows you to "handle" things on the thread. Here's what you get with
+the `handler`:
+
+1. `handler.init` - The data that was passed in via the `init` key in `pool.assign`.
+2. `handler.finish` - A function to call when the thread has finished executing the task you assigned to it. It takes a single argument containing data to send back to the main thread.
+3. `handler.err` - A function to be called when you want to manually shut down the thread from the inside.
+4. `handler.send` - A function to be called when you want to send a message to the main thread. It takes a single argument containing data to send back to the main thread.
 
 As shown in the example, `assign` returns a Promise object which resolves upon
 successful completion of the task, and rejects whenever there was a problem.
@@ -72,8 +77,8 @@ pool.assign({
 Because thread-pool gives you Node.js processes, your task files should be
 JS files. They will be `required` into your thread upon execution and
 will have access to your whole project directory as normal. The only stipulation
-is that your `task` file needs to export a single function taking the `payload`,
-`finish`, and `err` parameters. This will allow you to properly interface with
+is that your `task` file needs to export a single function taking the `handler`,
+parameter. This will allow you to properly interface with
 thread-pool. Like so:
 
 ```javascript
@@ -81,15 +86,90 @@ thread-pool. Like so:
 
 import { whatever } from 'wherever';
 
-export default function (payload, finish, err) {
-  finish(`You sent me the payload ${payload}.`);
+export default function (handler) {
+  handler.finish(`You sent me the payload ${handler.init}.`);
 };
 ```
 
 Behind the scenes, thread-pool will cache these tasks so that they will not
 have to be read in every time they are used.
 
-## What happens when there's an error?
+### Messaging
+
+From the main application thread, you'll always treat your pool as a cohesive unit.
+In other words, you won't be able to target a specific thread and tell it to take
+any particular action once a task has been assigned to it.
+
+**HOWEVER...**
+
+Tasks being executed within the pool **can** pass messages back to the main thread
+and, when that happens, the main thread **can** reply to those messages. Let's
+start by looking at an example task file:
+
+```javascript
+// example-task.js
+
+export default function (handler) {
+  handler.send('Hello from one of the threads in your pool.')
+         .onReply(data => {
+           console.log('Parent replied with', data);
+         });
+};
+```
+
+Whenever we want to send a message to the main thread, we'll use `handler.send`
+and pass in whatever serializable data we want. If we're expecting a reply back
+from the main thread, we can trap it with a subsequent call to `onReply`.
+
+Now let's take a look at the main thread:
+
+```javascript
+import { Pool } from 'thread-pool';
+
+const pool = new Pool();
+
+pool.onMessage((data, reply) => {
+  console.log('Pool sent me:', data);
+  reply('Hello to you too.');
+});
+
+pool.assign({ task: './example-task' });
+```
+
+We can trap all incoming messages from the pool by calling `pool.onMessage`. The
+message handler we pass to this method accepts two arguments denoting (first)
+the data that came through and (second) a reply function. By calling the reply
+function, we can pass data back as a response to this specific message.
+
+A nice convention might be to pass along an object containing both a message
+type as well as any other necessary data, then set up an `onMessage` handler
+that routes messages to appropriate processes. For example...
+
+**Inside a task file...**
+```javascript
+handler.send({
+  type: 'FOO',
+  data: { ... }
+});
+
+handler.send({
+  type: 'BAR',
+  data: { ... }
+});
+```
+
+**Inside the main application...**
+```javascript
+pool.onMessage((data, reply) => {
+  switch (data.type) {
+    case 'FOO' : return reply(something(data.data));
+    case 'BAR' : return reply(somethingElse(data.data));
+    default    : throw new Error('Bad message type.');
+  }
+});
+```
+
+## What happens when there's an error inside a thread?
 
 Certain kinds of errors will result in a terminated thread. Also, if you call
 the `err` function anywhere within your task, the thread will be terminated.

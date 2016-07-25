@@ -11,7 +11,8 @@ var symbols = {
   RESOLVER: Symbol(),
   REJECTER: Symbol(),
   KILLSIGINT: Symbol(),
-  TIMER: Symbol()
+  TIMER: Symbol(),
+  HANDLER: Symbol()
 };
 
 exports.default = symbols;

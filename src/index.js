@@ -6,17 +6,17 @@ import { Pool } from 'thread-pool';
 const pool = new Pool();
 
 pool.assign({
-  task: function (payload, finish, err) {
-    finish('i got ' + payload);
+  task: function (handler) {
+    finish('i got ' + handler.init);
   },
-  payload: 'hello'
+  init: 'hello'
 })
 .then(data => {
   console.log('pool sent back', data);
 });
  */
 
-import { spawn } from './helpers/process-events';
+import spawn from './helpers/process-events';
 import symbols from './helpers/symbols';
 
 /**
@@ -76,6 +76,7 @@ export class Pool {
    */
   constructor(size = 5) {
     this[symbols.MAX_SIZE]   = size;
+    this[symbols.HANDLER]    = null;
     this[symbols.WAITING]    = [];
     this[symbols.TASK_QUEUE] = [];
     this[symbols.PIDS]       = [];
@@ -116,7 +117,7 @@ export class Pool {
    * a promise so we can handle the return from the child process.
    *
    * @param  {Object} taskObj  Describes the task to be completed.
-   *                           Keys are `task` and `payload`.
+   *                           Keys are `task`, `init`, `timeout`.
    *
    * @return {Promise}
    */
@@ -162,6 +163,19 @@ export class Pool {
         console.log(`Thread Pool: New task waiting for idle thread. ${this[symbols.TASK_QUEUE].length} tasks waiting.`);
       }
     });
+  }
+
+  /**
+   * Allow the user to handle incoming messages from child processes.
+   *
+   * @param  {Function} fn Accepts a `data` argument and a `reply` function
+   *                       which allows the user to
+   *                       send a reply back to the process.
+   *
+   * @return {undefined}
+   */
+  onMessage(fn) {
+    this[symbols.HANDLER] = fn;
   }
 
 }

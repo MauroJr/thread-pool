@@ -31,13 +31,69 @@ function checkTaskQueue(pool) {
 }
 
 /**
+ * Procedure for when a process completes a task.
+ *
+ * @param  {Pool}         pool  A thread pool instance.
+ * @param  {ChildProcess} child A thread.
+ * @param  {Object}       msg   The message that came through from the child.
+ *
+ * @return {undefined}
+ */
+function onComplete(pool, child, msg) {
+  const resolver = child[symbols.RESOLVER];
+
+  /*
+   * Clear any running timers.
+   */
+  child[symbols.TIMER] && clearTimeout(child[symbols.TIMER]);
+
+  /*
+   * Reset the resolver and rejecter.
+   */
+  child[symbols.RESOLVER] = null;
+  child[symbols.REJECTER] = null;
+  child[symbols.TIMER]    = null;
+
+  /*
+   * Put the child process back into the waiting pool.
+   */
+  pool[symbols.WAITING].push(child);
+
+  /*
+   * Check to see if there are other tasks that need to
+   * be completed.
+   */
+  checkTaskQueue(pool);
+
+  /*
+   * Resolve the promise with the data from the child process.
+   */
+  resolver && resolver(msg.data);
+}
+
+/**
+ * Give users the ability to receive and reply to messages from
+ * child processes.
+ *
+ * @param  {Pool}         pool  A thread pool instance.
+ * @param  {ChildProcess} child A thread.
+ * @param  {Object}       msg   The message that came through from the child.
+ *
+ * @return {undefined}
+ */
+function onMessage(pool, child, msg) {
+  const reply = data => child.send({ type: 'reply', id: msg.id, data: data });
+  pool[symbols.HANDLER] && pool[symbols.HANDLER](msg.data, reply);
+}
+
+/**
  * Creates a new child process from the processBody string.
  *
  * @param {Pool} pool  A thread pool instance.
  *
  * @return {ChildProcess}
  */
-export function spawn(pool) {
+export default function spawn(pool) {
 
   /*
    * Create a child process.
@@ -76,8 +132,9 @@ export function spawn(pool) {
    */
   child.on('message', msg => {
     switch (msg.type) {
-      case 'done' : return onComplete(pool, child, msg);
-      default     : return;
+      case 'done'    : return onComplete(pool, child, msg);
+      case 'message' : return onMessage(pool, child, msg);
+      default        : return;
     }
   });
 
@@ -88,45 +145,4 @@ export function spawn(pool) {
   pool[symbols.WAITING].push(child);
   checkTaskQueue(pool);
   return child;
-}
-
-/**
- * Procedure for when a process completes a task.
- *
- * @param  {Pool}         pool  A thread pool instance.
- * @param  {ChildProcess} child A thread.
- * @param  {Object}       msg   The message that came through from the child.
- *
- * @return {undefined}
- */
-export function onComplete(pool, child, msg) {
-  const resolver = child[symbols.RESOLVER];
-
-  /*
-   * Clear any running timers.
-   */
-  child[symbols.TIMER] && clearTimeout(child[symbols.TIMER]);
-
-  /*
-   * Reset the resolver and rejecter.
-   */
-  child[symbols.RESOLVER] = null;
-  child[symbols.REJECTER] = null;
-  child[symbols.TIMER]    = null;
-
-  /*
-   * Put the child process back into the waiting pool.
-   */
-  pool[symbols.WAITING].push(child);
-
-  /*
-   * Check to see if there are other tasks that need to
-   * be completed.
-   */
-  checkTaskQueue(pool);
-
-  /*
-   * Resolve the promise with the data from the child process.
-   */
-  resolver && resolver(msg.data);
 }

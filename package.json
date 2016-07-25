@@ -1,8 +1,14 @@
 {
   "name": "thread-pool",
   "version": "0.0.1",
-  "description": "Thread pooling for node.js",
+  "description": "Simple thread pooling for Node.js.",
+  "author": "John Newman",
+  "license": "MIT",
   "main": "bin/index.js",
+  "homepage": "https://github.com/jgnewman/thread-pool#readme",
+  "bugs": {
+    "url": "https://github.com/jgnewman/thread-pool/issues"
+  },
   "scripts": {
     "test": "node test/test"
   },
@@ -10,21 +16,8 @@
     "type": "git",
     "url": "git+https://github.com/jgnewman/thread-pool.git"
   },
-  "keywords": [
-    "process",
-    "spawn",
-    "worker",
-    "web worker",
-    "thread",
-    "pool",
-    "async"
-  ],
-  "author": "John Newman",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/jgnewman/thread-pool/issues"
-  },
-  "homepage": "https://github.com/jgnewman/thread-pool#readme",
+  "dependencies": {},
+  "peerDependencies": {},
   "devDependencies": {
     "babel-cli": "^6.11.4",
     "babel-core": "^6.11.4",
@@ -38,5 +31,16 @@
     "gulp-util": "^3.0.7",
     "run-sequence": "^1.2.2",
     "webpack": "^1.13.1"
-  }
+  },
+  "keywords": [
+    "process",
+    "spawn",
+    "fork",
+    "worker",
+    "web worker",
+    "thread",
+    "pool",
+    "async",
+    "messaging"
+  ]
 }

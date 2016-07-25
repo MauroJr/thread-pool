@@ -70,7 +70,7 @@ pool.assign({
 ```
 
 Because thread-pool gives you Node.js processes, your task files should be
-standard JS files. They will be `required` in to your thread upon execution and
+JS files. They will be `required` into your thread upon execution and
 will have access to your whole project directory as normal. The only stipulation
 is that your `task` file needs to export a single function taking the `payload`,
 `finish`, and `err` parameters. This will allow you to properly interface with
@@ -122,13 +122,28 @@ would be generated. If all threads are alive, nothing happens.
 
 If you are using a tool like Babel (or whatever) to compile your cutting-edge
 JS dialect, keep in mind that your compiler can not automatically be applied to
-threads in the pool. As such, this should not cause problems as long as your
-thread tasks are already pre-processed in such a way that all dialect-centric
-libraries and polyfills have been included in them, and all the files they
-import are also already pre-processed.
+threads in the pool and these threads will not have access to in-memory code
+held by the main thread.
 
-However, if you were to import an unprocessed file that employed a non-native
-technique, your thread would likely throw an error and die.
+As such, this should not cause problems as long as your thread tasks are already
+pre-processed in such a way that all dialect-specific libraries and polyfills
+have been included in them, and all the files they import are also already
+pre-processed.
+
+To illustrate a little more clearly, JS processors often work like this:
+
+1. Gather all files to be compiled together.
+2. Inject dialect-specific dependency code ONCE, at the top of the output.
+3. Generate code for imports and exports ONCE, at the top of the output.
+4. Process and concatenate files as necessary.
+5. Write the output.
+
+Because processors try really hard not to be wasteful, you could easily end
+up with task files that rely upon dialect-specific dependency code that isn't
+actually written in those files. Then, when an independent process attempts to
+execute that task, it won't have access to that code. So, to avoid this, simply
+make sure that your task files are processed independently of the rest of your
+application.
 
 ## Context Considerations
 

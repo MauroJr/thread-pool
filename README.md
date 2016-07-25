@@ -118,12 +118,15 @@ fill the size of your thread pool. So if no threads are alive, all of them
 will be generated. If, somehow, one thread had permanently died, only one thread
 would be generated. If all threads are alive, nothing happens.
 
-## ES6/7 Considerations
+## Considerations for ES6/7, TypeScript, CoffeeScript, etc.
 
-If you are using a tool like Babel to compile your cutting-edge JS code, keep
-in mind that your Babel-ish tool can not automatically be applied to threads in
-the pool. As such, this should not cause problems as long as your thread tasks
-are already pre-processed and all the files they import are also pre-processed.
+If you are using a tool like Babel (or whatever) to compile your cutting-edge
+JS dialect, keep in mind that your compiler can not automatically be applied to
+threads in the pool. As such, this should not cause problems as long as your
+thread tasks are already pre-processed in such a way that all dialect-centric
+libraries and polyfills have been included in them, and all the files they
+import are also already pre-processed.
+
 However, if you were to import an unprocessed file that employed a non-native
 technique, your thread would likely throw an error and die.
 

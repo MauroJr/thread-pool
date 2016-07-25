@@ -1,8 +1,10 @@
 # thread-pool (BETA)
 
-thread-pool is a simple thread pool manager for Node.js. It allows you to create
-a waiting pool of independent OS processes, each running Node.js, to which
-you can assign tasks, using promises to handle the completion of those tasks.
+thread-pool is a simple thread pool manager for Node.js. (Currently in Beta)
+
+It allows you to create a waiting pool of independent OS processes (threads),
+each running Node.js, to which you can assign tasks and use promises to handle
+the completion of those tasks.
 
 ## Usage
 

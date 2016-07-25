@@ -1,4 +1,4 @@
-# thread-pool
+# thread-pool (BETA)
 
 thread-pool is a simple thread pool manager for Node.js. It allows you to create
 a waiting pool of independent OS processes, each running Node.js, to which
@@ -102,8 +102,8 @@ any particular action once a task has been assigned to it.
 
 **HOWEVER...**
 
-Tasks being executed within the pool **can** pass messages back to the main thread
-and, when that happens, the main thread **can** reply to those messages. Let's
+Tasks being executed within the pool **_can_** pass messages back to the main thread
+and, when that happens, the main thread **_can_** reply to those messages. Let's
 start by looking at an example task file:
 
 ```javascript
@@ -112,7 +112,7 @@ start by looking at an example task file:
 export default function (handler) {
   handler.send('Hello from one of the threads in your pool.')
          .onReply(data => {
-           console.log('Parent replied with', data);
+           console.log('Parent replied with:', data);
          });
 };
 ```

@@ -68,7 +68,7 @@ that case, simply pass in the path to your file instead of a function:
 ```javascript
 pool.assign({
   task: './example-task',
-  payload: 'foo'
+  init: 'foo'
 })
 .then(data => console.log('Success!', data))
 .catch(data => console.log('Failure!', data));

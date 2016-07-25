@@ -16,87 +16,8 @@ pool.assign({
 });
  */
 
-
-import cp from 'child_process';
-import fs from 'fs';
-
-const MAX_SIZE   = Symbol();
-const WAITING    = Symbol();
-const TASK_QUEUE = Symbol();
-const PIDS       = Symbol();
-const RESOLVER   = Symbol();
-const REJECTER   = Symbol();
-const KILLSIGINT = Symbol();
-const TIMER      = Symbol();
-
-/**
- * Generate a string to be used as the body of each child process.
- */
-const processBody = (function () {
-
-  /**
-   * This function will be invoked immediately upon evaluating the child
-   * process.
-   */
-  const body = function () {
-    var __cache = {};
-    function finish(output) {
-      process.send({
-        type: 'done',
-        data: output
-      });
-    }
-    function err() {
-      process.exit(1);
-    }
-    function req(path) {
-      var required = require(path);
-      return required.default || required;
-    }
-    process.on('message', function (msg) {
-      var task, payload, taskTxt;
-      if (msg.type === 'task') {
-        payload = JSON.parse(msg.data.payload);
-        if (msg.isFunction) {
-          taskTxt = msg.data.task.trim().replace(/^function\s*\(/, 'function __(');
-          eval('task = ' + taskTxt);
-        } else {
-          task = __cache[msg.data.task] = __cache[msg.data.task] || req(msg.data.task);
-        }
-        task.call(this, payload, finish, err);
-      }
-    });
-  };
-  return `(${body.toString()}());`;
-}());
-
-/**
- * Whenever this function is called, we should be confident that
- * there is at least 1 child process waiting to receive a task.
- *
- * This function will check to see if there is a task queued to be
- * performed and will call `assign` to hand it off to the waiting
- * child process.
- *
- * The `assign` method will return a promise so when that promise
- * resolves, we should pass the resolution on to the `resolve`
- * function created when the waiting task was assigned. Same with
- * errors.
- *
- * @param  {Pool} pool An instance of a child process pool.
- *
- * @return {undefined}
- */
-function checkTaskQueue(pool) {
-  if (pool[TASK_QUEUE].length) {
-    const task = pool[TASK_QUEUE].shift();
-    pool.assign(task.task)
-        .then(data => task.resolve(data))
-        .catch(data => task.catch(data));
-  } else {
-    console.log(`Thread Pool: 1 new idle thread. ${pool[WAITING].length}/${pool[MAX_SIZE]} threads idle.`);
-  }
-}
+import { spawn } from './helpers/process-events';
+import symbols from './helpers/symbols';
 
 /**
  * Parses a task and sends it along to a child process.
@@ -110,12 +31,16 @@ function checkTaskQueue(pool) {
 function sendTaskToChild(child, taskObj) {
   const toSend = {type: 'task', data: taskObj, isFunction: false};
 
-  // If the task comes in as a string, it's a path to a file containing
-  // the task.
+  /*
+   * If the task comes in as a string, it's a path to a file containing
+   * the task.
+   */
   if (typeof taskObj.task === 'string') {
     child.send(toSend);
 
-  // If it's a function, stringify the function and send that.
+  /*
+   * If it's a function, stringify the function and send that.
+   */
   } else if (typeof taskObj.task === 'function') {
     toSend.data.task = taskObj.task.toString();
     toSend.isFunction = true;
@@ -124,80 +49,15 @@ function sendTaskToChild(child, taskObj) {
     throw new Error('Tasks may only be functions or paths to JavaScript files.');
   }
 
-  // If we want this process to die after a certain amount of time,
-  // set a timer to do that.
+  /*
+   * If we want this process to die after a certain amount of time,
+   * set a timer to do that.
+   */
   if (taskObj.timeout) {
-    child[TIMER] = setTimeout(() => child.kill('SIGINT'), taskObj.timeout);
+    child[symbols.TIMER] = setTimeout(() => child.kill('SIGINT'), taskObj.timeout);
   }
 }
 
-/**
- * Creates a new child process from the processBody string.
- *
- * @return {ChildProcess}
- */
-function spawnChild(pool, resurrect) {
-
-  // Create a child process.
-  const child = cp.fork(null, [], {
-    execPath: 'node',
-    execArgv: ['-e', processBody]
-  });
-
-  // Add the process to the list of total processes.
-  pool[PIDS].push(child);
-
-  // Set up 2 new properties to help work with promises.
-  child[RESOLVER]   = null;
-  child[REJECTER]   = null;
-  child[TIMER]      = null;
-  child[KILLSIGINT] = false;
-
-  // When a child closes, fire a rejecter if we have one,
-  // remove the child from our list of total pool processes,
-  // and spawn a new child if we need it to resurrect.
-  child.on('close', (data) => {
-    if (child[REJECTER]) {
-      child[REJECTER](data);
-    }
-    pool[PIDS].splice(pool[PIDS].indexOf(child), 1);
-    if (resurrect === 'resurrect' && !child[KILLSIGINT]) {
-      spawnChild(pool, 'resurrect');
-    }
-  });
-
-  // When the child process sends back a `done` message...
-  child.on('message', msg => {
-    if (msg.type === 'done') {
-      const resolver = child[RESOLVER];
-
-      // Clear any running timers.
-      child[TIMER] && clearTimeout(child[TIMER]);
-
-      // Reset the resolver and rejecter.
-      child[RESOLVER] = null;
-      child[REJECTER] = null;
-      child[TIMER]    = null;
-
-
-      // Put the child process back into the waiting pool.
-      pool[WAITING].push(child);
-
-      // Check to see if there are other tasks that need to
-      // be completed.
-      checkTaskQueue(pool);
-
-      // Resolve the promise with the data from the child process.
-      resolver && resolver(msg.data);
-    }
-  });
-
-  // Put the child process into the waiting pool and check to
-  // see if there are any tasks to be completed.
-  pool[WAITING].push(child);
-  checkTaskQueue(pool);
-  return child;
-}
 
 /**
  * @class
@@ -215,10 +75,10 @@ export class Pool {
    * @return {undefined}
    */
   constructor(size = 5) {
-    this[MAX_SIZE]   = size;
-    this[WAITING]    = [];
-    this[TASK_QUEUE] = [];
-    this[PIDS]       = [];
+    this[symbols.MAX_SIZE]   = size;
+    this[symbols.WAITING]    = [];
+    this[symbols.TASK_QUEUE] = [];
+    this[symbols.PIDS]       = [];
     this.up();
   }
 
@@ -230,9 +90,9 @@ export class Pool {
    * @return {undefined}
    */
   up() {
-    const amount = this[MAX_SIZE] - this[WAITING].length;
+    const amount = this[symbols.MAX_SIZE] - this[symbols.WAITING].length;
     for (let i = 0; i < amount; i += 1) {
-      spawnChild(this, 'resurrect');
+      spawn(this);
     }
     console.log('Thread Pool: All processes alive.');
   }
@@ -243,11 +103,11 @@ export class Pool {
    * @return {undefined}
    */
   killAll() {
-    this[PIDS].forEach(child => {
+    this[symbols.PIDS].forEach(child => {
       child.kill('SIGINT');
-      child[KILLSIGINT] = true;
+      child[symbols.KILLSIGINT] = true;
     });
-    this[PIDS] = [];
+    this[symbols.PIDS] = [];
     console.log('Thread Pool: All processes terminated.');
   }
 
@@ -263,31 +123,43 @@ export class Pool {
   assign(taskObj) {
     return new Promise((resolve, reject) => {
 
-      // If there is a process waiting to receive a task...
-      if (this[WAITING].length) {
+      /*
+       * If there is a process waiting to receive a task...
+       */
+      if (this[symbols.WAITING].length) {
 
-        // Remove the child process from the waiting pool.
-        const child = this[WAITING].pop();
+        /*
+         * Remove the child process from the waiting pool.
+         */
+        const child = this[symbols.WAITING].pop();
 
-        // Send the child process the task.
+        /*
+         * Send the child process the task.
+         */
         sendTaskToChild(child, taskObj);
 
-        // Attach a resolver and a rejecter to our child process.
-        child[RESOLVER] = resolve;
-        child[REJECTER] = reject;
+        /*
+         * Attach a resolver and a rejecter to our child process.
+         */
+        child[symbols.RESOLVER] = resolve;
+        child[symbols.REJECTER] = reject;
 
-      // If we are not able to assign the task...
+      /*
+       * If we are not able to assign the task...
+       */
       } else {
 
-        // Push the task to the task queue and wait for another child process
-        // to finish and pick it up.
-        this[TASK_QUEUE].push({
+        /*
+         * Push the task to the task queue and wait for another child process
+         * to finish and pick it up.
+         */
+        this[symbols.TASK_QUEUE].push({
           task: taskObj,
           resolve: resolve,
           reject: reject
         });
 
-        console.log(`Thread Pool: New task waiting for idle thread. ${this[TASK_QUEUE].length} tasks waiting.`);
+        console.log(`Thread Pool: New task waiting for idle thread. ${this[symbols.TASK_QUEUE].length} tasks waiting.`);
       }
     });
   }

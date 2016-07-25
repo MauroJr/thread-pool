@@ -23,99 +23,15 @@ var _createClass = function () { function defineProperties(target, props) { for 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      });
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       */
 
-var _child_process = require('child_process');
+var _processEvents = require('./helpers/process-events');
 
-var _child_process2 = _interopRequireDefault(_child_process);
+var _symbols = require('./helpers/symbols');
 
-var _fs = require('fs');
-
-var _fs2 = _interopRequireDefault(_fs);
+var _symbols2 = _interopRequireDefault(_symbols);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var MAX_SIZE = Symbol();
-var WAITING = Symbol();
-var TASK_QUEUE = Symbol();
-var PIDS = Symbol();
-var RESOLVER = Symbol();
-var REJECTER = Symbol();
-var KILLSIGINT = Symbol();
-var TIMER = Symbol();
-
-/**
- * Generate a string to be used as the body of each child process.
- */
-var processBody = function () {
-
-  /**
-   * This function will be invoked immediately upon evaluating the child
-   * process.
-   */
-  var body = function body() {
-    var __cache = {};
-    function finish(output) {
-      process.send({
-        type: 'done',
-        data: output
-      });
-    }
-    function err() {
-      process.exit(1);
-    }
-    function req(path) {
-      var required = require(path);
-      return required.default || required;
-    }
-    process.on('message', function (msg) {
-      var task, payload, taskTxt;
-      if (msg.type === 'task') {
-        payload = JSON.parse(msg.data.payload);
-        if (msg.isFunction) {
-          taskTxt = msg.data.task.trim().replace(/^function\s*\(/, 'function __(');
-          eval('task = ' + taskTxt);
-        } else {
-          task = __cache[msg.data.task] = __cache[msg.data.task] || req(msg.data.task);
-        }
-        task.call(this, payload, finish, err);
-      }
-    });
-  };
-  return '(' + body.toString() + '());';
-}();
-
-/**
- * Whenever this function is called, we should be confident that
- * there is at least 1 child process waiting to receive a task.
- *
- * This function will check to see if there is a task queued to be
- * performed and will call `assign` to hand it off to the waiting
- * child process.
- *
- * The `assign` method will return a promise so when that promise
- * resolves, we should pass the resolution on to the `resolve`
- * function created when the waiting task was assigned. Same with
- * errors.
- *
- * @param  {Pool} pool An instance of a child process pool.
- *
- * @return {undefined}
- */
-function checkTaskQueue(pool) {
-  if (pool[TASK_QUEUE].length) {
-    (function () {
-      var task = pool[TASK_QUEUE].shift();
-      pool.assign(task.task).then(function (data) {
-        return task.resolve(data);
-      }).catch(function (data) {
-        return task.catch(data);
-      });
-    })();
-  } else {
-    console.log('Thread Pool: 1 new idle thread. ' + pool[WAITING].length + '/' + pool[MAX_SIZE] + ' threads idle.');
-  }
-}
 
 /**
  * Parses a task and sends it along to a child process.
@@ -146,77 +62,10 @@ function sendTaskToChild(child, taskObj) {
   // If we want this process to die after a certain amount of time,
   // set a timer to do that.
   if (taskObj.timeout) {
-    child[TIMER] = setTimeout(function () {
+    child[_symbols2.default.TIMER] = setTimeout(function () {
       return child.kill('SIGINT');
     }, taskObj.timeout);
   }
-}
-
-/**
- * Creates a new child process from the processBody string.
- *
- * @return {ChildProcess}
- */
-function spawnChild(pool, resurrect) {
-
-  // Create a child process.
-  var child = _child_process2.default.fork(null, [], {
-    execPath: 'node',
-    execArgv: ['-e', processBody]
-  });
-
-  // Add the process to the list of total processes.
-  pool[PIDS].push(child);
-
-  // Set up 2 new properties to help work with promises.
-  child[RESOLVER] = null;
-  child[REJECTER] = null;
-  child[TIMER] = null;
-  child[KILLSIGINT] = false;
-
-  // When a child closes, fire a rejecter if we have one,
-  // remove the child from our list of total pool processes,
-  // and spawn a new child if we need it to resurrect.
-  child.on('close', function (data) {
-    if (child[REJECTER]) {
-      child[REJECTER](data);
-    }
-    pool[PIDS].splice(pool[PIDS].indexOf(child), 1);
-    if (resurrect === 'resurrect' && !child[KILLSIGINT]) {
-      spawnChild(pool, 'resurrect');
-    }
-  });
-
-  // When the child process sends back a `done` message...
-  child.on('message', function (msg) {
-    if (msg.type === 'done') {
-      var resolver = child[RESOLVER];
-
-      // Clear any running timers.
-      child[TIMER] && clearTimeout(child[TIMER]);
-
-      // Reset the resolver and rejecter.
-      child[RESOLVER] = null;
-      child[REJECTER] = null;
-      child[TIMER] = null;
-
-      // Put the child process back into the waiting pool.
-      pool[WAITING].push(child);
-
-      // Check to see if there are other tasks that need to
-      // be completed.
-      checkTaskQueue(pool);
-
-      // Resolve the promise with the data from the child process.
-      resolver && resolver(msg.data);
-    }
-  });
-
-  // Put the child process into the waiting pool and check to
-  // see if there are any tasks to be completed.
-  pool[WAITING].push(child);
-  checkTaskQueue(pool);
-  return child;
 }
 
 /**
@@ -240,10 +89,10 @@ var Pool = exports.Pool = function () {
 
     _classCallCheck(this, Pool);
 
-    this[MAX_SIZE] = size;
-    this[WAITING] = [];
-    this[TASK_QUEUE] = [];
-    this[PIDS] = [];
+    this[_symbols2.default.MAX_SIZE] = size;
+    this[_symbols2.default.WAITING] = [];
+    this[_symbols2.default.TASK_QUEUE] = [];
+    this[_symbols2.default.PIDS] = [];
     this.up();
   }
 
@@ -259,9 +108,9 @@ var Pool = exports.Pool = function () {
   _createClass(Pool, [{
     key: 'up',
     value: function up() {
-      var amount = this[MAX_SIZE] - this[WAITING].length;
+      var amount = this[_symbols2.default.MAX_SIZE] - this[_symbols2.default.WAITING].length;
       for (var i = 0; i < amount; i += 1) {
-        spawnChild(this, 'resurrect');
+        (0, _processEvents.spawn)(this);
       }
       console.log('Thread Pool: All processes alive.');
     }
@@ -275,11 +124,11 @@ var Pool = exports.Pool = function () {
   }, {
     key: 'killAll',
     value: function killAll() {
-      this[PIDS].forEach(function (child) {
+      this[_symbols2.default.PIDS].forEach(function (child) {
         child.kill('SIGINT');
-        child[KILLSIGINT] = true;
+        child[_symbols2.default.KILLSIGINT] = true;
       });
-      this[PIDS] = [];
+      this[_symbols2.default.PIDS] = [];
       console.log('Thread Pool: All processes terminated.');
     }
 
@@ -301,30 +150,30 @@ var Pool = exports.Pool = function () {
       return new Promise(function (resolve, reject) {
 
         // If there is a process waiting to receive a task...
-        if (_this[WAITING].length) {
+        if (_this[_symbols2.default.WAITING].length) {
 
           // Remove the child process from the waiting pool.
-          var child = _this[WAITING].pop();
+          var child = _this[_symbols2.default.WAITING].pop();
 
           // Send the child process the task.
           sendTaskToChild(child, taskObj);
 
           // Attach a resolver and a rejecter to our child process.
-          child[RESOLVER] = resolve;
-          child[REJECTER] = reject;
+          child[_symbols2.default.RESOLVER] = resolve;
+          child[_symbols2.default.REJECTER] = reject;
 
           // If we are not able to assign the task...
         } else {
 
           // Push the task to the task queue and wait for another child process
           // to finish and pick it up.
-          _this[TASK_QUEUE].push({
+          _this[_symbols2.default.TASK_QUEUE].push({
             task: taskObj,
             resolve: resolve,
             reject: reject
           });
 
-          console.log('Thread Pool: New task waiting for idle thread. ' + _this[TASK_QUEUE].length + ' tasks waiting.');
+          console.log('Thread Pool: New task waiting for idle thread. ' + _this[_symbols2.default.TASK_QUEUE].length + ' tasks waiting.');
         }
       });
     }
